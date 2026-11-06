@@ -105,8 +105,6 @@ def classify_mentions(review_text: str, mentions: list) -> dict:
     headers = {"X-API-KEY": get_api_key()}
     body = {"state": {"review": review_text}, "questions": subject_questions(mentions)}
     response = requests.post(url, headers=headers, json=body)
-    if not response.ok:
-        print(response.status_code, response.text)
     response.raise_for_status()
     return response.json()
 
