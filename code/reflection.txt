@@ -1,7 +1,102 @@
-Write your reflection here.
+The things I learned:
 
-See reflection.md for what makes a good reflection — be specific, use the
-terminology from this assignment (REST API, endpoint, HTTP status code,
-raise_for_status, API key, form data vs. JSON body, rate limit, caching,
-json_normalize, record_path, meta, grain, opinion mining, named-entity
-recognition, prompt, system prompt, reasoning model), and make it actionable.
+1. Calling a REST API the same way every time. Every function in apicalls.py
+   builds the URL from BASE_URL plus an endpoint path, sends the API key from
+   get_api_key() in an X-API-KEY header, POSTs, calls raise_for_status(), and
+   returns response.json(). Once I saw that pattern, the four functions were
+   mostly copies of each other. The parts that change are how the body is sent
+   and what you pull out of the JSON afterward.
+
+2. Form data vs. a JSON body. The Azure sentiment and entity endpoints take
+   form data (data={"text": text}), but the decision-model endpoint
+   (/api/ollama/systemone) takes a JSON body (json=body). The json= argument
+   also sets the Content-Type header for you. ask_llm sends the model settings
+   (model, reasoning_effort) as query-string params= and the messages list as
+   JSON. Next time, before I write a request, I'll check whether the endpoint
+   expects form data, a JSON body, or query parameters.
+
+3. Why raise_for_status() matters. Without it, a 4xx/5xx response still comes
+   back as a normal-looking dictionary, and the error shows up three steps later
+   as a KeyError. When classify_mentions kept failing, I printed
+   response.status_code and response.text before raising. The status code told
+   me which group of problems to look at: 401/403 means the key or header is
+   wrong, 404 means the URL or path is wrong, 400/422 means the body is bad
+   (NaN text, an empty mention list), and 5xx means a server problem or timeout.
+   I also learned to test one call by itself, like classify_mentions("The mocha
+   latte was lukewarm.", ["mocha latte"]), instead of running the whole pipeline.
+
+4. Caching API results. Each extract step (sentiment_step, entities_step,
+   subjects_step) checks os.path.exists(cache_file) first and only calls the
+   API on a miss. Then it writes the cache with json.dump or to_csv. This
+   protects me from rate limits and makes the second run instant. I also
+   learned that sorting each review's mentions by mention_offset before calling
+   classify_mentions matters: identical requests hit the portal's own cache.
+
+5. Turning nested JSON into tables. pd.json_normalize with record_path and meta
+   flattened the sentences and entities lists into one row per record, with
+   review_id carried along as meta. Opinion mining output was too nested for
+   json_normalize. A target points to its assessments through a ref string like
+   "#/documents/0/sentences/1/assessments/0". So opinions_table uses nested
+   loops: enumerate(sentences) gives the sentence_id, and ref.split("/")[-1]
+   gives the assessment index.
+
+6. Grain. Each table has a grain: one row per review, per sentence, per mention,
+   or per (subject, item). Each merge in build_mentions has to join on the keys
+   that match that grain: ["review_id", "mention"] for subjects and
+   ["review_id", "sentence_id"] for sentences. Filtering out subject == "other"
+   only works AFTER the left merge. If I filter subjects first, the left merge
+   keeps those rows with NaN instead of dropping them.
+
+7. Pivot tables for counting. summarize_items uses pivot_table with
+   aggfunc="size" to count mentions by sentiment, not to average scores. I
+   have to compute the mentions total (sum(axis=1)) BEFORE adding the
+   positive/negative/net columns, or they get counted twice. net is an
+   engineered column. results.get("positive", 0) keeps it from crashing when a
+   sentiment never appears in the filtered data.
+
+8. Prompts for the LLM. build_messages returns a system prompt plus a user
+   message. The user message contains the question, summary facts computed
+   from ALL the evidence rows, one line per item, and up to `limit` sample
+   sentences. The program does the counting and the model only writes the
+   answer, so the model can't make up numbers. I also learned not to call the
+   model at all when the evidence is empty.
+
+The areas I struggled in:
+
+- Functions that silently returned None. opinions_table was missing its return
+  statement, and the error showed up somewhere else as "TypeError: 'NoneType'
+  object is not subscriptable." Now when I see that error, I check that the
+  function I just called actually returns something.
+- Where to put whitespace cleanup. item_name has to strip() and lower() the
+  mention itself, because the test passes " wifi ", not clean input.
+- Order of operations in pandas chains: sort_values -> drop_duplicates(keep=
+  "first") -> reset_index(drop=True). keep="first" only works if the sort
+  comes first, and reset_index has to go last.
+- Streamlit details. I wrote "positive".sum() instead of
+  (selected["mention_sentiment"] == "positive").sum(), which is a parentheses
+  bug. I guessed at a descending= argument; sort_values only has ascending=. I
+  also had to learn that only the slow ask_llm call goes inside
+  `with st.spinner()`, and that the metrics/tabs use `selected` (filtered) while
+  the Q&A uses the full `mentions` table.
+- Code style. ruff flagged lines over 88 characters, whitespace on blank lines,
+  and a 2-space indent. I learned to split long expressions inside parentheses
+  and to pull long column lists into a named variable.
+
+Challenges and how I can practice:
+
+- entity_mentions (provided) checks whether entity_offset falls inside a
+  sentence's [offset, offset + length) range and skips entities already covered
+  by an opinion target. I can follow it, but I couldn't have written it myself
+  yet. Next step: rewrite it on paper with one review and trace the offsets.
+- I rely on trial and error with merges. Next step: practice merges with the
+  validate= and indicator=True arguments so I can see when a join changes the
+  grain or leaves NaN rows.
+- I want to read the Azure Text Analytics docs for opinion mining and
+  named-entity recognition so I understand the full response structure, not
+  just the fields this assignment used.
+- I'd like to learn how a reasoning model's reasoning_effort setting changes
+  the answers and the response time. I could try the same question at
+  different settings and compare.
+- Debugging habit to keep: when an API call fails, print the status code and
+  response text first, and test one call by itself before running the full
+  pipeline.
