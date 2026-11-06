@@ -123,23 +123,25 @@ def build_mentions(reviews: pd.DataFrame, sentences: pd.DataFrame,
     cortado" both becoming "oat milk cortado"). Sorted by `review_id` then
     `mention_offset`, plain index.
     """
-    
+
     master = pd.concat([opinions, entity_rows], ignore_index=True)
-    
+
     master = pd.merge(master, subjects, on=["review_id", "mention"], how="left")
     master = master[master["subject"] != "other"]
-    
+
     master = pd.merge(master, sentences, on=["review_id", "sentence_id"], how="left")
     master = pd.merge(master, reviews, on="review_id", how="left")
-    
+
     master["item"] = master["mention"].apply(lambda x: item_name(x, aliases))
-    
+
     master = (
         master.sort_values(["review_id", "mention_offset"])
-              .drop_duplicates(subset=["review_id", "sentence_id", "item"], keep="first")
+              .drop_duplicates(
+                  subset=["review_id", "sentence_id", "item"], keep="first"
+              )
               .reset_index(drop=True)
     )
-    
+
     return master[["review_id", "date", "location", "stars", "item", "mention",
             "subject", "mention_sentiment", "assessments", "sentence_text",
             "source", "subject_confidence"]]
@@ -157,22 +159,23 @@ def analyze_reviews(reviews_file: str) -> pd.DataFrame:
     sentiment_cache = cache_path(reviews_file, "sentiment")
     entities_cache = cache_path(reviews_file, "entities")
     subjects_cache = cache_path(reviews_file, "subjects", "csv")
-    
+
     reviews = pd.read_csv(reviews_file)
-    
+
     sentiments = sentiment_step(reviews, cache_file=sentiment_cache)
-    
+
     entities = entities_table(entities_step(reviews, cache_file=entities_cache))
     sentences = sentences_table(sentiments)
     opinions = opinions_table(sentiments)
-    
+
     entity_table = entity_mentions(entities, sentences, opinions)
-    
+
     all_mentions = pd.concat([opinions, entity_table], ignore_index=True)
     subjects = subjects_step(reviews, all_mentions, cache_file=subjects_cache)
-    
-    return build_mentions(reviews, sentences, opinions, entity_table, subjects, load_aliases())
-    
+
+    return build_mentions(
+        reviews, sentences, opinions, entity_table, subjects, load_aliases()
+    )
 
 
 def summarize_items(mentions: pd.DataFrame) -> pd.DataFrame:
@@ -203,14 +206,16 @@ def summarize_items(mentions: pd.DataFrame) -> pd.DataFrame:
         aggfunc="size",
         fill_value=0
     )
-    
+
     results["mentions"] = results.sum(axis=1)
     results["positive"] = results.get("positive", 0)
     results["negative"] = results.get("negative", 0)
     results["net"] = results["positive"] - results["negative"]
-    
-    results = results.sort_values(["mentions", "item"], ascending=[False, True]).reset_index()
-    
+
+    results = results.sort_values(
+        ["mentions", "item"], ascending=[False, True]
+    ).reset_index()
+
     return results[["subject", "item", "mentions", "positive", "negative", "net"]]
 
 
@@ -332,12 +337,14 @@ def build_messages(question: str, evidence: pd.DataFrame, limit: int = 20) -> li
 
     lines = [
         f"Question: {question}",
-        f"Facts: {n} mentions — {pos} positive, {neg} negative, {other} neutral or mixed.",
+        f"Facts: {n} mentions — {pos} positive, {neg} negative, "
+        f"{other} neutral or mixed.",
         "Items, most mentioned first:",
     ]
     for row in items.itertuples(index=False):
         lines.append(f"- {row.item} ({row.subject}): {row.mentions} mentions, "
-                     f"{row.positive} positive, {row.negative} negative, net {row.net:+d}")
+                     f"{row.positive} positive, {row.negative} negative, "
+                     f"net {row.net:+d}")
 
     lines.append("Review sentences:")
     for row in evidence.head(limit).itertuples(index=False):
@@ -348,6 +355,7 @@ def build_messages(question: str, evidence: pd.DataFrame, limit: int = 20) -> li
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": "\n".join(lines)},
     ]
+
 
 def answer_question(question: str, mentions: pd.DataFrame, aliases: dict):
     """What a question is about and the evidence for it: (scope, evidence)."""

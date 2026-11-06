@@ -58,7 +58,10 @@ reviews_file = os.environ.get("REVIEWS_FILE", REVIEWS_FILE)
 #    or subject, or ask a question at the bottom of the page."
 
 st.title("Salt City Coffee — What Customers Are Saying")
-st.markdown("Every customer review, broken into the things people talk about. Filter by location or subject, or ask a question at the bottom of the page.")
+st.markdown(
+    "Every customer review, broken into the things people talk about. "
+    "Filter by location or subject, or ask a question at the bottom of the page."
+)
 
 # 3. THE DATA
 #    mentions <- analyze_reviews(reviews_file)
@@ -111,9 +114,11 @@ with reviews_col:
 with mentions_col:
     st.metric("Mentions", value=selected.shape[0])
 with positive_col:
-    st.metric("Positive", value=int((selected["mention_sentiment"] == "positive").sum()))
+    positive_count = (selected["mention_sentiment"] == "positive").sum()
+    st.metric("Positive", value=int(positive_count))
 with negative_col:
-    st.metric("Negative", value=int((selected["mention_sentiment"] == "negative").sum()))
+    negative_count = (selected["mention_sentiment"] == "negative").sum()
+    st.metric("Negative", value=int(negative_count))
 
 # 6. THREE TABLES IN THREE TABS
 #    a. summary <- summarize_items(selected)
@@ -130,13 +135,21 @@ with negative_col:
 #       sentence_text. hide_index=True.
 
 summary = summarize_items(selected)
-praise, complaints, vibe = st.tabs(["Most praised", "Most complained about", "What people said"])
+praise, complaints, vibe = st.tabs(
+    ["Most praised", "Most complained about", "What people said"]
+)
 with praise:
-    st.dataframe(summary[summary["net"] > 0].sort_values(by="net", ascending=False).head(5), hide_index=True)
+    most_praised = summary[summary["net"] > 0].sort_values(by="net", ascending=False)
+    st.dataframe(most_praised.head(5), hide_index=True)
 with complaints:
-    st.dataframe(summary[summary["net"] < 0].sort_values(by="net", ascending=True).head(5), hide_index=True)
+    most_complained = summary[summary["net"] < 0].sort_values(by="net", ascending=True)
+    st.dataframe(most_complained.head(5), hide_index=True)
 with vibe:
-    st.dataframe(selected[["date", "location", "item", "subject", "mention_sentiment", "assessments", "sentence_text"]], hide_index=True)
+    said_columns = [
+        "date", "location", "item", "subject",
+        "mention_sentiment", "assessments", "sentence_text",
+    ]
+    st.dataframe(selected[said_columns], hide_index=True)
 
 # 7. THE QUESTION BOX
 #    a. st.subheader: Ask the reviews
@@ -146,7 +159,11 @@ with vibe:
 #    c. An st.button labeled "Ask" with key "ask".
 
 st.subheader("Ask the reviews")
-user_question = st.text_input(label="Your question", key="question", placeholder="What is the most popular product?")
+user_question = st.text_input(
+    label="Your question",
+    key="question",
+    placeholder="What is the most popular product?",
+)
 ask_button = st.button(label="Ask", key="ask")
 
 # 8. WHEN ASK IS CLICKED (and the question is not blank — question.strip())
@@ -172,14 +189,22 @@ ask_button = st.button(label="Ask", key="ask")
 if user_question.strip() and ask_button:
     scope, evidence = answer_question(user_question, mentions, load_aliases())
     if evidence.empty:
-        st.warning(f"No reviews mention {describe_scope(scope)}. Try a menu item, a staff member, or part of the shop.")
+        st.warning(
+            f"No reviews mention {describe_scope(scope)}. "
+            "Try a menu item, a staff member, or part of the shop."
+        )
     else:
         messages = build_messages(user_question, evidence)
         with st.spinner("Asking the model..."):
             answer = ask_llm(messages)
         st.markdown(answer)
-        st.caption(f"Based on {len(evidence)} mentions — {describe_scope(scope)}:")
-        st.dataframe(evidence[["date", "location", "item", "mention_sentiment", "sentence_text"]], hide_index=True)
+        st.caption(
+            f"Based on {len(evidence)} mentions — {describe_scope(scope)}:"
+        )
+        evidence_columns = [
+            "date", "location", "item", "mention_sentiment", "sentence_text",
+        ]
+        st.dataframe(evidence[evidence_columns], hide_index=True)
 
 # What the page does NOT do: call the API directly, group or pivot, or build the
 # prompt itself. That logic lives in the package; the page only assembles it.

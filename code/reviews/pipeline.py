@@ -52,17 +52,17 @@ def sentiment_step(reviews: pd.DataFrame, cache_file: str) -> list:
     if os.path.exists(cache_file):
         with open(cache_file, "r") as f:
             return json.load(f)
-    
+
     reviews_list = []
     for review in reviews.to_dict(orient="records"):
         sentiment = get_sentiment(review["text"])
         document = sentiment["results"]["documents"][0]
         document["review_id"] = review["review_id"]
         reviews_list.append(document)
-    
+
     with open(cache_file, "w") as f:
         json.dump(reviews_list, f)
-    
+
     return reviews_list
 
 
@@ -75,17 +75,17 @@ def entities_step(reviews: pd.DataFrame, cache_file: str) -> list:
     if os.path.exists(cache_file):
         with open(cache_file, "r") as f:
             return json.load(f)
-    
+
     reviews_list = []
     for review in reviews.to_dict(orient="records"):
         entities = get_entities(review["text"])
         document = entities["results"]["documents"][0]
         document["review_id"] = review["review_id"]
         reviews_list.append(document)
-    
+
     with open(cache_file, "w") as f:
         json.dump(reviews_list, f)
-    
+
     return reviews_list
 
 
@@ -109,11 +109,14 @@ def sentences_table(documents: list) -> pd.DataFrame:
         meta=["review_id"],
         record_prefix="sentence_"
     )
-    
+
     df["sentence_id"] = df.groupby("review_id").cumcount()
     df["sentence_text"] = df["sentence_text"].str.strip()
-    
-    return df[["review_id", "sentence_id", "sentence_text", "sentence_sentiment", "sentence_offset", "sentence_length"]]
+
+    return df[[
+        "review_id", "sentence_id", "sentence_text",
+        "sentence_sentiment", "sentence_offset", "sentence_length",
+    ]]
 
 
 def opinions_table(documents: list) -> pd.DataFrame:
@@ -151,9 +154,9 @@ def opinions_table(documents: list) -> pd.DataFrame:
                         ref = relation.get("ref")
                         # Extract the assessment index from the ref string
                         assessment_index = int(ref.split("/")[-1])
-                        assessment_text = sentence["assessments"][assessment_index]["text"]
-                        assessments.append(assessment_text)
-                
+                        assessment = sentence["assessments"][assessment_index]
+                        assessments.append(assessment["text"])
+
                 rows.append({
                     "review_id": review_id,
                     "sentence_id": sentence_id,
@@ -163,9 +166,10 @@ def opinions_table(documents: list) -> pd.DataFrame:
                     "mention_offset": target["offset"],
                     "source": "opinion"
                 })
-    
+
     return pd.DataFrame(rows, columns=[
-        "review_id", "sentence_id", "mention", "mention_sentiment", "assessments", "mention_offset", "source"])
+        "review_id", "sentence_id", "mention", "mention_sentiment",
+        "assessments", "mention_offset", "source"])
 
 
 def entities_table(documents: list) -> pd.DataFrame:
@@ -186,7 +190,7 @@ def entities_table(documents: list) -> pd.DataFrame:
         meta=["review_id"],
         record_prefix="entity_"
     )
-    
+
     df = df[df["entity_category"].isin(MENTION_CATEGORIES)].reset_index(drop=True)
 
     return df[["review_id", "entity_text", "entity_category", "entity_offset"]]
@@ -213,12 +217,16 @@ def subjects_step(reviews: pd.DataFrame, mentions: pd.DataFrame,
     """
     if os.path.exists(cache_file):
         return pd.read_csv(cache_file)
-    
+
     rows = []
     for review in reviews.to_dict(orient="records"):
         review_id = review["review_id"]
         review_text = review["text"]
-        review_mentions = mentions[mentions["review_id"] == review_id].sort_values("mention_offset").drop_duplicates(subset="mention")
+        review_mentions = (
+            mentions[mentions["review_id"] == review_id]
+            .sort_values("mention_offset")
+            .drop_duplicates(subset="mention")
+        )
         mention_list = review_mentions["mention"].tolist()
         if mention_list:
             response = classify_mentions(review_text, mention_list)
@@ -230,9 +238,10 @@ def subjects_step(reviews: pd.DataFrame, mentions: pd.DataFrame,
                     "subject": answer.get("choice"),
                     "subject_confidence": answer.get("confidence")
                 })
-    
-    df = pd.DataFrame(rows, columns=["review_id", "mention", "subject", "subject_confidence"])
+
+    df = pd.DataFrame(
+        rows, columns=["review_id", "mention", "subject", "subject_confidence"]
+    )
     df.to_csv(cache_file, index=False)
-    
+
     return df
-        
