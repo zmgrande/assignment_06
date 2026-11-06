@@ -82,8 +82,8 @@ mentions = analyze_reviews(reviews_file)
 
 location, subject = st.columns(2)
 
-locations = ["All"] + sorted(mentions["location"].unique()).tolist()
-subjects = ["All"] + sorted(mentions["subject"].unique()).tolist()
+locations = ["All"] + sorted(mentions["location"].unique())
+subjects = ["All"] + sorted(mentions["subject"].unique())
 
 with location:
     location_filter = st.selectbox(label="Location", options=locations, key="location")
